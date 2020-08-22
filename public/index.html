@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auction House CSV</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <style type="text/css">
+        body {background-color:#333; color:#CCC; font-family:Verdana, "open sans", Arial, "Helvetica neue", Helvetica, sans-serif; margin:2em auto; max-width:50em; padding:0 2em}
+        a {color:#CCF}
+        #results-div {display:flex}
+        #results-div a {display:block; line-height:150%}
+
+        .byline {font-size:85%; text-align:right}
+        a.patreon {color:#FCC}
+    </style>
+</head>
+<body>
+    <h1>Auction House CSV</h1>
+    <div class="byline">
+        by <a href="https://everynothing.net/">Erorus</a> - 
+        <a href="https://www.patreon.com/bePatron?u=4445407" class="patreon">Become a patron</a>
+    </div>
+    <div id="results-div"></div>
+    <script>
+(function () {
+    ['us', 'eu', 'tw', 'kr'].forEach(function (region) {
+        let div = document.createElement('div');
+        document.getElementById('results-div').appendChild(div);
+
+        let h = document.createElement('h2');
+        div.appendChild(h);
+        h.appendChild(document.createTextNode(region.toUpperCase()))
+
+        fetch(region + '.json')
+        .then((response) => response.json())
+        .then((data) => {
+            let byName = [];
+            for (let realmId in data.realms) {
+                if (!data.realms.hasOwnProperty(realmId)) {
+                    continue;
+                }
+
+                let realm = data.realms[realmId];
+                realm.names.forEach((name) => {
+                    byName.push({
+                        name: name,
+                        slug: realm.slug,
+                    });
+                });
+            }
+            byName.sort((a, b) => a.name.localeCompare(b.name));
+
+            byName.forEach((realm) => {
+                let line = document.createElement('a');
+                line.href = 'https://ah-csv.us-east-1.linodeobjects.com/' + region + '-' + realm.slug + '.csv';
+                line.appendChild(document.createTextNode(realm.name));
+
+                div.appendChild(line);
+            });
+        });
+    });
+})();
+    </script>
+</body>

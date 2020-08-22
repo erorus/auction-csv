@@ -28,7 +28,7 @@ function main(): void {
         'region' => 'us-east-1',
     ]);
 
-    $regions = [$bnet::REGION_US, $bnet::REGION_EU];
+    $regions = [$bnet::REGION_US, $bnet::REGION_EU, $bnet::REGION_TW, $bnet::REGION_KR];
     foreach ($regions as $region) {
         processRegion($bnet, $region, $s3);
     }
