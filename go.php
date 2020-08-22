@@ -16,6 +16,7 @@ function logTime(string $message): void {
 
 function main(): void {
     date_default_timezone_set('UTC');
+    ini_set('memory_limit', '256M');
 
     logTime('Starting');
     $bnet = new BattleNet(getenv('BATTLE_NET_KEY', true), getenv('BATTLE_NET_SECRET', true));
@@ -182,7 +183,7 @@ function processRealm(
         'Key' => $csvFileName,
         'Body' => $handle,
         'ContentType' => 'text/csv',
-        'Expires' => $lastModified + 60 * 60,
+        'Expires' => $lastModified + 70 * 60,
     ]);
     fclose($handle);
 
