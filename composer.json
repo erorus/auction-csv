@@ -1,0 +1,11 @@
+{
+    "autoload": {
+        "psr-4": {
+            "Erorus\\": "lib/Erorus/"
+        }
+    },
+    "require": {
+        "guzzlehttp/guzzle": "^7.0",
+        "aws/aws-sdk-php": "^3.0"
+    }
+}
