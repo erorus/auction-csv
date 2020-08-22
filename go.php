@@ -16,7 +16,7 @@ function logTime(string $message): void {
 
 function main(): void {
     date_default_timezone_set('UTC');
-    ini_set('memory_limit', '256M');
+    ini_set('memory_limit', '384M');
 
     logTime('Starting');
     $bnet = new BattleNet(getenv('BATTLE_NET_KEY', true), getenv('BATTLE_NET_SECRET', true));
