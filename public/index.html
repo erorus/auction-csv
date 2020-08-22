@@ -6,7 +6,7 @@
     <style type="text/css">
         body {background-color:#333; color:#CCC; font-family:Verdana, "open sans", Arial, "Helvetica neue", Helvetica, sans-serif; margin:2em auto; max-width:50em; padding:0 2em}
         a {color:#CCF}
-        #results-div {display:flex}
+        #results-div {display:flex; margin-bottom:2em}
         #results-div a {display:block; line-height:150%}
 
         .byline {font-size:85%; text-align:right}
@@ -16,10 +16,12 @@
 <body>
     <h1>Auction House CSV</h1>
     <div class="byline">
-        by <a href="https://everynothing.net/">Erorus</a> - 
+        by <a href="https://everynothing.net/">Erorus</a> -
         <a href="https://www.patreon.com/bePatron?u=4445407" class="patreon">Become a patron</a>
     </div>
     <div id="results-div"></div>
+    This data was obtained via <a href="https://develop.battle.net/">Blizzard's Community API</a>. No warranty expressed
+    or implied.
     <script>
 (function () {
     ['us', 'eu', 'tw', 'kr'].forEach(function (region) {
