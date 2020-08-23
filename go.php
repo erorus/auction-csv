@@ -7,6 +7,9 @@ use Erorus\BattleNet;
 
 define('SUMMARY_PATH', __DIR__ . '/data');
 define('CSV_PATH', __DIR__ . '/data');
+define('BIN_PATH', __DIR__ . '/data');
+
+define('TEST_MODE', false);
 
 main();
 
@@ -28,7 +31,7 @@ function main(): void {
         'region' => 'us-east-1',
     ]);
 
-    $regions = [$bnet::REGION_US, $bnet::REGION_EU, $bnet::REGION_TW, $bnet::REGION_KR];
+    $regions = TEST_MODE ? [$bnet::REGION_US] : [$bnet::REGION_US, $bnet::REGION_EU, $bnet::REGION_TW, $bnet::REGION_KR];
     foreach ($regions as $region) {
         processRegion($bnet, $region, $s3);
     }
@@ -37,7 +40,7 @@ function main(): void {
 }
 
 function processRegion(BattleNet $bnet, string $region, S3Client $s3) {
-    $realmLimit = 0;
+    $realmLimit = TEST_MODE ? 5 : 0;
 
     logTime("Reading {$region} summary...");
     $oldSummary = readSummary($region);
@@ -135,6 +138,118 @@ function processRealm(
 
     logTime(sprintf("Found %d auctions.", count($data->auctions ?? [])));
 
+    writeCsv($region, $slug, $data->auctions ?? [], $lastModified, $s3);
+    writeBin($region, $slug, $data->auctions ?? [], $lastModified, $s3);
+
+    return $lastModified;
+}
+
+function readSummary(string $region): object {
+    $path = SUMMARY_PATH . "/{$region}.json";
+
+    if (!file_exists($path)) {
+        return (object)[];
+    }
+
+    $data = json_decode(file_get_contents($path));
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        logTime("Summary file could not be parsed as JSON: " . json_last_error_msg());
+
+        return (object)[];
+    }
+
+    return $data;
+}
+
+function writeBin(string $region, string $slug, array $auctions, int $lastModified, S3Client $s3): void {
+    logTime("Assembling Bin file.");
+
+    $version = 1;
+    $commodities = '';
+    $items = '';
+    $pets = '';
+
+    $counts = (object)[
+        'commodities' => 0,
+        'items' => 0,
+        'pets' => 0,
+    ];
+
+    $bidBuyoutBytes = function(int $bid, int $buyout): string {
+        $bytes = '';
+        $flags = 0;
+        if ($bid) {
+            $flags = $flags | 0x1;
+            if ($bid > 0xFFFFFFFF) {
+                $flags = $flags | 0x2;
+                $bytes .= pack('P', $bid);
+            } else {
+                $bytes .= pack('V', $bid);
+            }
+        }
+        if ($buyout) {
+            $flags = $flags | 0x4;
+            if ($buyout > 0xFFFFFFFF) {
+                $flags = $flags | 0x8;
+                $bytes .= pack('P', $buyout);
+            } else {
+                $bytes .= pack('V', $buyout);
+            }
+        };
+
+        return chr($flags) . $bytes;
+    };
+
+    foreach ($auctions as $auction) {
+        if (isset($auction->unit_price)) {
+            $commodities .= pack('Vv',
+                $auction->item->id ?? 0,
+                $auction->quantity ?? 0
+            );
+            $commodities .= $bidBuyoutBytes(0, $auction->unit_price);
+            $counts->commodities++;
+        } elseif (isset($auction->item->pet_breed_id)) {
+            $pets .= pack('vCCC',
+                $auction->item->pet_species_id ?? 0,
+                $auction->item->pet_breed_id ?? 0,
+                $auction->item->pet_level ?? 0,
+                $auction->item->pet_quality_id ?? 0
+            );
+            $pets .= $bidBuyoutBytes($auction->bid ?? 0, $auction->buyout ?? 0);
+            $counts->pets++;
+        } else {
+            $bonuses = $auction->item->bonus_lists ?? [];
+            sort($bonuses, SORT_NUMERIC);
+            $items .= pack('VC',
+                $auction->item->id ?? 0,
+                count($bonuses)
+            );
+            array_unshift($bonuses, 'v*');
+            $items .= call_user_func_array('pack', $bonuses);
+            $items .= $bidBuyoutBytes($auction->bid ?? 0, $auction->buyout ?? 0);
+            $counts->items++;
+        }
+    }
+
+    $binFileName = sprintf('%s-%s.bin', $region, $slug);
+
+    $tempBinPath = tempnam(BIN_PATH, "temp-{$region}");
+    $handle = fopen($tempBinPath, 'w+');
+    fwrite($handle, pack('CVVV', $version, $counts->commodities, $counts->items, $counts->pets));
+    fwrite($handle, $commodities);
+    fwrite($handle, $items);
+    fwrite($handle, $pets);
+    fclose($handle);
+
+    logTime("Writing Bin file to local disk.");
+    chmod($tempBinPath, 0644);
+    touch($tempBinPath, $lastModified);
+    rename($tempBinPath, CSV_PATH . "/{$binFileName}");
+}
+
+function writeCsv(string $region, string $slug, array $auctions, int $lastModified, S3Client $s3): void {
+    logTime("Assembling CSV file.");
+
     $fields = [
         'realm-slug',
         'quantity',
@@ -156,7 +271,7 @@ function processRealm(
     $tempCsvPath = tempnam(CSV_PATH, "temp-{$region}");
     $handle = fopen($tempCsvPath, 'w+');
     fputcsv($handle, $fields);
-    foreach ($data->auctions ?? [] as $auction) {
+    foreach ($auctions as $auction) {
         $row = [
             $slug,
             $auction->quantity ?? '',
@@ -176,53 +291,23 @@ function processRealm(
         fputcsv($handle, $row);
     }
     rewind($handle);
-    logTime("Assembled CSV file. Uploading plaintext to S3 bucket...");
-    $s3->putObject([
-        'ACL' => 'public-read',
-        'Bucket' => getenv('S3_BUCKET', true),
-        'Key' => $csvFileName,
-        'Body' => $handle,
-        'ContentType' => 'text/csv',
-        'Expires' => $lastModified + 70 * 60,
-    ]);
+    if (!TEST_MODE) {
+        logTime("Assembled CSV file. Uploading plaintext to S3 bucket...");
+        $s3->putObject([
+            'ACL'         => 'public-read',
+            'Bucket'      => getenv('S3_BUCKET', true),
+            'Key'         => $csvFileName,
+            'Body'        => $handle,
+            'ContentType' => 'text/csv',
+            'Expires'     => $lastModified + 70 * 60,
+        ]);
+    }
     fclose($handle);
 
-    /*
-    logTime("Uploading compressed CSV to S3 bucket...");
-    $s3->putObject([
-        'ACL' => 'public-read',
-        'Bucket' => getenv('S3_BUCKET', true),
-        'Key' => $csvFileName,
-        'Body' => gzcompress(file_get_contents($tempCsvPath)),
-        'ContentType' => 'text/csv',
-        'ContentEncoding' => 'gzip',
-        'Expires' => $lastModified + 60 * 60,
-    ]);
-    */
-
-    logTime("Writing file to local disk.");
+    logTime("Writing CSV file to local disk.");
     chmod($tempCsvPath, 0644);
     touch($tempCsvPath, $lastModified);
     rename($tempCsvPath, CSV_PATH . "/{$csvFileName}");
-
-    return $lastModified;
-}
-
-function readSummary(string $region): object {
-    $path = SUMMARY_PATH . "/{$region}.json";
-
-    if (!file_exists($path)) {
-        return (object)[];
-    }
-
-    $data = json_decode(file_get_contents($path));
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        logTime("Summary file could not be parsed as JSON: " . json_last_error_msg());
-
-        return (object)[];
-    }
-
-    return $data;
 }
 
 function writeSummary(string $region, object $data): void {
