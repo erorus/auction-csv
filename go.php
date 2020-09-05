@@ -31,15 +31,22 @@ function main(): void {
         'region' => 'us-east-1',
     ]);
 
+    $asyncProcs = [];
+
     $regions = TEST_MODE ? [$bnet::REGION_US] : [$bnet::REGION_US, $bnet::REGION_EU, $bnet::REGION_TW, $bnet::REGION_KR];
     foreach ($regions as $region) {
-        processRegion($bnet, $region, $s3);
+        processRegion($bnet, $region, $s3, $asyncProcs);
+    }
+
+    logTime(sprintf('Closing %d spawned processes', count($asyncProcs)));
+    foreach ($asyncProcs as $proc) {
+        proc_close($proc);
     }
 
     logTime('Finished');
 }
 
-function processRegion(BattleNet $bnet, string $region, S3Client $s3) {
+function processRegion(BattleNet $bnet, string $region, S3Client $s3, array &$asyncProcs) {
     $realmLimit = TEST_MODE ? 5 : 0;
 
     logTime("Reading {$region} summary...");
@@ -104,7 +111,8 @@ function processRegion(BattleNet $bnet, string $region, S3Client $s3) {
             $region,
             $realmId,
             $mainSlug,
-            $oldSummary->realms->$realmId->lastModified ?? null
+            $oldSummary->realms->$realmId->lastModified ?? null,
+            $asyncProcs
         );
 
         $summaryData->realms->$realmId->lastModified = $lastModified;
@@ -120,7 +128,8 @@ function processRealm(
     string $region,
     int $realmId,
     string $slug,
-    ?int $lastModified
+    ?int $lastModified,
+    array &$asyncProcs
 ): int {
     logTime("Getting auctions for {$region} realm {$realmId}.");
 
@@ -142,7 +151,7 @@ function processRealm(
     logTime(sprintf("Found %d auctions.", count($data->auctions ?? [])));
 
     writeCsv($region, $slug, $data->auctions ?? [], $lastModified, $s3);
-    writeBin($region, $slug, $data->auctions ?? [], $lastModified, $s3);
+    writeBin($region, $slug, $data->auctions ?? [], $lastModified, $s3, $asyncProcs);
 
     return $lastModified;
 }
@@ -164,7 +173,14 @@ function readSummary(string $region): object {
     return $data;
 }
 
-function writeBin(string $region, string $slug, array $auctions, int $lastModified, S3Client $s3): void {
+function writeBin(
+    string $region,
+    string $slug,
+    array $auctions,
+    int $lastModified,
+    S3Client $s3,
+    array &$asyncProcs
+): void {
     logTime("Assembling Bin file.");
 
     $version = 1;
@@ -245,9 +261,18 @@ function writeBin(string $region, string $slug, array $auctions, int $lastModifi
     fclose($handle);
 
     logTime("Writing Bin file to local disk.");
+    $binPath = BIN_PATH . "/{$binFileName}";
+    if (file_exists("{$binPath}.br")) {
+        unlink("{$binPath}.br");
+    }
     chmod($tempBinPath, 0644);
     touch($tempBinPath, $lastModified);
-    rename($tempBinPath, BIN_PATH . "/{$binFileName}");
+    rename($tempBinPath, $binPath);
+
+    logTime("Compressing Bin file with Brotli.");
+    $cmd = 'brotli -k -- ' . escapeshellarg($binPath);
+    $pipes = [];
+    $asyncProcs[] = proc_open($cmd, [STDIN, STDOUT, STDERR], $pipes, BIN_PATH);
 }
 
 function writeCsv(string $region, string $slug, array $auctions, int $lastModified, S3Client $s3): void {
