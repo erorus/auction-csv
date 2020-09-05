@@ -72,10 +72,12 @@ function processRegion(BattleNet $bnet, string $region, S3Client $s3) {
         }
 
         $mainSlug = null;
+        $mainName = null;
         $names = [];
         foreach ($realmData->realms ?? [] as $realm) {
             if (is_null($mainSlug) || $realm->id === $realmId) {
                 $mainSlug = $realm->slug;
+                $mainName = $realm->name;
             }
             $names[] = $realm->name;
         }
@@ -92,6 +94,7 @@ function processRegion(BattleNet $bnet, string $region, S3Client $s3) {
 
         $summaryData->realms->$realmId = (object)[
             'slug' => $mainSlug,
+            'name' => $mainName,
             'names' => $names,
         ];
 
