@@ -247,7 +247,7 @@ function writeBin(string $region, string $slug, array $auctions, int $lastModifi
     logTime("Writing Bin file to local disk.");
     chmod($tempBinPath, 0644);
     touch($tempBinPath, $lastModified);
-    rename($tempBinPath, CSV_PATH . "/{$binFileName}");
+    rename($tempBinPath, BIN_PATH . "/{$binFileName}");
 }
 
 function writeCsv(string $region, string $slug, array $auctions, int $lastModified, S3Client $s3): void {
