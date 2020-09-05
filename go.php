@@ -138,7 +138,13 @@ function processRealm(
         $opts[$bnet::OPT_MODIFIED_SINCE] = $lastModified;
     }
 
-    $data = $bnet->fetch($region, sprintf('/data/wow/connected-realm/%d/auctions', $realmId), $opts);
+    try {
+        $data = $bnet->fetch($region, sprintf('/data/wow/connected-realm/%d/auctions', $realmId), $opts);
+    } catch (Exception $e) {
+        logTime("Exception fetching data: " . $e->getMessage());
+
+        return $lastModified ?? 0;
+    }
     $auctionHeaders = $bnet->getLastResponseHeaders();
     $lastModified = strtotime($auctionHeaders['last-modified'] ?? 'now');
 
