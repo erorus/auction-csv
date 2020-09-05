@@ -130,7 +130,7 @@ class BattleNet {
     private function getGuzzle(): Client {
         if (!isset($this->guzzle)) {
             $this->guzzle = new Client([
-                'timeout' => 5.0,
+                'timeout' => 15.0,
             ]);
         }
 
