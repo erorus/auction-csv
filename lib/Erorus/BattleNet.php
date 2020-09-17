@@ -148,12 +148,12 @@ class BattleNet {
         }
 
         $client = $this->getGuzzle();
-        $res = $client->get(self::TOKEN_URI, [
+        $res = $client->post(self::TOKEN_URI, [
             'auth' => [$this->key, $this->secret],
             'headers' => [
                 'Accept' => 'application/json',
             ],
-            'query' => [
+            'form_params' => [
                 'grant_type' => 'client_credentials',
             ]
         ]);
